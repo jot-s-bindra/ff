@@ -1,0 +1,592 @@
+//----------------------------------------------------------------
+//                     DEPENDENCIES
+//----------------------------------------------------------------
+const vscode = require('vscode');
+const fs = require('fs');
+const path = require('path');
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+const util = require('util');
+const { exec } = require('child_process');
+
+//----------------------------------------------------------------
+//                  GLOBAL VARIABLES
+//----------------------------------------------------------------
+const API_KEY = "AIzaSyCFdOiphIEFjS1yOBdAWkij6PUwENfHWac";
+const genAI = new GoogleGenerativeAI(API_KEY);
+const test_cases = 3;
+let language = "";
+
+
+//----------------------------------------------------------------
+//                  FORMAT THE CODE
+//----------------------------------------------------------------
+
+//                      PYTHON
+async function formatGeneratedCode(generatedCode) {
+    generatedCode = generatedCode.replace(/`/g, '');
+    generatedCode = generatedCode.replace(/^```python/, '').replace(/```$/, '');
+    generatedCode = generatedCode.replace(/^python\s*/, '');
+    return generatedCode;
+}
+
+//                     JAVASCRIPT
+async function formatGeneratedCodeJS(generatedCode) {
+    generatedCode = generatedCode.replace(/`/g, '');
+    generatedCode = generatedCode.replace(/^```javascript/, '').replace(/```$/, '');
+    generatedCode = generatedCode.replace(/^javascript\s*/, '');
+    generatedCode = generatedCode.trim();
+    return generatedCode;
+}
+
+//                     TYPESCRIPT
+async function formatGeneratedCodeTS(generatedCode) {
+    generatedCode = generatedCode.replace(/`/g, '');
+    generatedCode = generatedCode.replace(/^```typescript/, '').replace(/```$/, '');
+    generatedCode = generatedCode.replace(/^typescript\s*/, '');
+    generatedCode = generatedCode.trim();
+    return generatedCode;
+}
+//                     GOLANG
+async function formatGeneratedCodeGo(generatedCode) {
+    generatedCode = generatedCode.replace(/`/g, '');
+    generatedCode = generatedCode.replace(/^```go/, '').replace(/```$/, '');
+    generatedCode = generatedCode.replace(/^go\s*/, '');
+    generatedCode = generatedCode.trim();
+    return generatedCode;
+}
+//----------------------------------------------------------------
+//                 FIX TEST CODE
+//----------------------------------------------------------------
+async function fixtestcode(generatedCode, logs, language) {
+    try {
+        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+        const prompt = `Return only and only fixed code and no reason or text, by analyzing the following ${language} code and \n\nGenerated Code:\n${generatedCode}\n\nLogs:\n${logs},Return only and only fixed code no test no reasons nothingjust fixed code`;
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const reasons = response.text();
+        return reasons;
+    } catch (error) {
+        console.error('Error analyzing failure reasons:', error);
+        return 'Failed to analyze failure reasons. Please try again later.';
+    }
+}
+
+//----------------------------------------------------------------
+//                 FAILURE REASON
+//----------------------------------------------------------------
+async function analyzeFailureReasons(generatedCode, logs, language) {
+    try {
+        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+        const prompt = `Analyze the following ${language} code and logs to determine possible reasons for failure:\n\nGenerated Code:\n${generatedCode}\n\nLogs:\n${logs},Return ALL OK if no errors in logs otherwise return reason in English and not code`;
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const reasons = response.text();
+        return reasons;
+    } catch (error) {
+        console.error('Error analyzing failure reasons:', error);
+        return 'Failed to analyze failure reasons. Please try again later.';
+    }
+}
+
+//----------------------------------------------------------------
+//                  More Test Cases
+//----------------------------------------------------------------
+async function moreedgecases(code, edgeCases, language) {
+    try {
+        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+        const prompt = `Here is the code ${code}, here are the test cases ${edgeCases}, now similarly give ${test_cases} more test cases in plain english `;
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const more_edgecases = response.text();
+        return more_edgecases;
+    } catch (error) {
+        console.error('Error fixing code:', error);
+        return 'Failed to fix code. Please try again later.';
+    }
+}
+
+//----------------------------------------------------------------
+//                  More Test Code
+//----------------------------------------------------------------
+async function moreedgecases_code(code, more_edgecases_ip, language) {
+    try {
+        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+        const prompt = `Given the provided ${language} code snippet:
+
+        
+        ${code}
+        
+        
+        Along with the following test cases:
+        
+        \`\`\`
+        ${more_edgecases_ip}
+        \`\`\`
+        NOW return code containg these edge cases in ${language},return only code and no comments and text, as it will be directly run. 
+        Your task is to write additional test cases using the unittest framework if ${language} is python otherwise use specific language testing library or any other way. Import any necessary classes or functions from the 'uwtest' file, which contains the required definitions. Ensure that the generated code contains no syntax errors and only includes the code for the test cases and the main execution function. Please provide the code without any comments or additional text, as it will be directly used for execution. `;
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const more_edgecases_code = response.text();
+        return more_edgecases_code;
+    } catch (error) {
+        console.error('Error fixing code:', error);
+        return 'Failed to fix code. Please try again later.';
+    }
+}
+
+//----------------------------------------------------------------
+//                       FIX CODE
+//----------------------------------------------------------------
+async function fixCode(code, generatedCode, logs, reasons, language) {
+    try {
+        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+        const prompt = `You're tasked with fixing the provided ${language} code:
+
+        
+        ${code}
+        
+        The code, when tested with the following test cases:
+        
+        \`\`\`
+        ${generatedCode}
+        \`\`\`
+        
+        Encountered the following errors:
+        
+        \`\`\`
+        ${logs}
+        \`\`\`
+        
+        Based on the analysis, the reason for these errors is:
+        
+        \`\`\`
+        ${reasons}
+        \`\`\`
+        
+        Your task is to provide the fixed code, ensuring it's complete and functional. Please provide the fixed code without any comments or additional text, strictly adhering to the code structure. `;
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const fixedCode = response.text();
+        return fixedCode;
+    } catch (error) {
+        console.error('Error fixing code:', error);
+        return 'Failed to fix code. Please try again later.';
+    }
+}
+
+//----------------------------------------------------------------
+//                    EDGE CASE AND ITS CODE
+//----------------------------------------------------------------
+async function generateEdgeCasesAndCode(code, directoryPath, language) {
+    try {
+        // EDGE CASES
+        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+        const edgeCasesPrompt = `Generate ${test_cases} Edge Cases for the following code in Simple format not the Markdown Format ${code}`;
+        const edgeCasesResult = await model.generateContent(edgeCasesPrompt);
+        const edgeCasesResponse = await edgeCasesResult.response;
+        const edgeCases = edgeCasesResponse.text();
+
+        // EDGE CASES CODE+FORMATTING
+        const codePrompt = `Generate the ${language} code in the format suitable for unit testing. Include a main function to execute the code for the provided edge cases:
+
+\`\`\`
+${edgeCases}
+\`\`\`
+
+Assume that the original code is located in 'uwtest'. If any functions need to be imported, include the necessary import statements.
+
+Please provide only the code without any comments or additional text. Ensure that the code follows the appropriate testing format and includes a main function for execution. Avoid adding any trailing backticks. `;
+        const codeResult = await model.generateContent(codePrompt);
+        const codeResponse = await codeResult.response;
+        let generatedCode = codeResponse.text();
+
+        if (language === 'python') {
+            generatedCode = await formatGeneratedCode(generatedCode);
+        } else if (language === 'javascript') {
+            generatedCode = await formatGeneratedCodeJS(generatedCode);
+        } else if (language === 'typescript') {
+            generatedCode = await formatGeneratedCodeTS(generatedCode);
+        } else if (language === 'golang') {
+            generatedCode = await formatGeneratedCodeGo(generatedCode);
+        }
+
+        // WRITING CODE TO generated_test.py, generated_test.js, or generated_test.ts
+        let newFileName;
+        if (language === 'python') {
+            newFileName = 'generated_test.py';
+        } else if (language === 'javascript') {
+            newFileName = 'generated_test.js';
+        } else if (language === 'typescript') {
+            newFileName = 'generated_test.ts';
+        } else if (language === 'golang') {
+            newFileName = 'generated_t.go';
+        }
+        const newFilePath = path.join(directoryPath, newFileName);
+        fs.writeFile(newFilePath, generatedCode, async (err) => {
+            if (err) {
+                vscode.window.showErrorMessage(`Error writing file: ${err.message}`);
+                return;
+            }
+            vscode.window.showInformationMessage(`File ${newFilePath} created successfully.`);
+            runCodeFile(code, edgeCases, generatedCode, newFilePath, language);
+        });
+
+    } catch (error) {
+        vscode.window.showErrorMessage('Error generating edge cases and code: ' + error.message);
+    }
+}
+
+
+//----------------------------------------------------------------
+//                      RUN CODE
+//----------------------------------------------------------------
+
+async function runCodeFile(code, edgeCases, generatedCode, filePath, language) {
+    try {
+        let command = '';
+        if (language === 'python') {
+            command = `python3 ${filePath}`;
+        } else if (language === 'javascript') {
+            command = `node ${filePath}`;
+        } else if (language === 'typescript') {
+            command = `ts-node ${filePath}`;
+        } else if (language === 'golang') {
+            command = `go run ${filePath}`;
+        } else {
+            throw new Error('Unsupported language');
+        }
+
+        exec(command, async (error, stdout, stderr) => {
+            let logs = '';
+            if (stdout) {
+                logs += stdout.toString();
+            }
+            if (stderr) {
+                logs += stderr.toString();
+            }
+
+            if (language === 'python') {
+                const reasons = await analyzeFailureReasons(generatedCode, logs, language);
+                const fix_test_code = await fixtestcode(generatedCode, logs, language);
+                const fixed_test_code = await formatGeneratedCode(fix_test_code);
+                const fixedCode = await fixCode(code, generatedCode, logs, reasons, language);
+                const fixed_formatCode = await formatGeneratedCode(fixedCode);
+                const more_edgecases_to_pass = await moreedgecases(code, edgeCases, language);
+                const more_edgecases_to_pass_code_format = await moreedgecases_code(code, more_edgecases_to_pass, language);
+                const more_edgecases_to_pass_code = await formatGeneratedCode(more_edgecases_to_pass_code_format);
+
+
+                showResultsInWebView(edgeCases, generatedCode, logs, reasons, fixed_formatCode, more_edgecases_to_pass, more_edgecases_to_pass_code,fixed_test_code,filePath);
+            } else if (language === 'javascript') {
+                const reasons_j = await analyzeFailureReasons(generatedCode, logs, language);
+                const fix_test_code = await fixtestcode(generatedCode, logs, language);
+                const fixed_test_code = await formatGeneratedCodeJS(fix_test_code);
+                const fixedCode_j = await fixCode(code, generatedCode, logs, reasons_j, language);
+                const fixed_formatCode_j = await formatGeneratedCodeJS(fixedCode_j);
+                const more_edgecases_to_pass_j = await moreedgecases(code, edgeCases, language);
+                const more_edgecases_to_pass_code_format_j = await moreedgecases_code(code, more_edgecases_to_pass_j, language);
+                const more_edgecases_to_pass_code_j = await formatGeneratedCodeJS(more_edgecases_to_pass_code_format_j);
+
+                showResultsInWebView(edgeCases, generatedCode, logs, reasons_j, fixed_formatCode_j, more_edgecases_to_pass_j, more_edgecases_to_pass_code_j,fixed_test_code,filePath);
+            } else if (language === 'typescript') {
+                const reasons_ts = await analyzeFailureReasons(generatedCode, logs, language);
+                const fix_test_code = await fixtestcode(generatedCode, logs, language);
+                const fixed_test_code = await formatGeneratedCodeTS(fix_test_code);
+                const fixedCode_ts = await fixCode(code, generatedCode, logs, reasons_ts, language);
+                const fixed_formatCode_ts = await formatGeneratedCodeTS(fixedCode_ts);
+                const more_edgecases_to_pass_ts = await moreedgecases(code, edgeCases, language);
+                const more_edgecases_to_pass_code_format_ts = await moreedgecases_code(code, more_edgecases_to_pass_ts, language);
+                const more_edgecases_to_pass_code_ts = await formatGeneratedCodeTS(more_edgecases_to_pass_code_format_ts);
+
+                showResultsInWebView(edgeCases, generatedCode, logs, reasons_ts, fixed_formatCode_ts, more_edgecases_to_pass_ts, more_edgecases_to_pass_code_ts,fixed_test_code,filePath);
+            } else if (language === 'golang') {
+                const reasons_go = await analyzeFailureReasons(generatedCode, logs, language);
+                const fix_test_code = await fixtestcode(generatedCode, logs, language);
+                const fixed_test_code = await formatGeneratedCodeGo(fix_test_code);
+                const fixedCode_go = await fixCode(code, generatedCode, logs, reasons_go, language);
+                const fixed_formatCode_go = await formatGeneratedCodeGo(fixedCode_go);
+                const more_edgecases_to_pass_go = await moreedgecases(code, edgeCases, language);
+                const more_edgecases_to_pass_code_format_go = await moreedgecases_code(code, more_edgecases_to_pass_go, language);
+                const more_edgecases_to_pass_code_go = await formatGeneratedCodeGo(more_edgecases_to_pass_code_format_go);
+
+                showResultsInWebView(edgeCases, generatedCode, logs, reasons_go, fixed_formatCode_go, more_edgecases_to_pass_go, more_edgecases_to_pass_code_go,fixed_test_code,filePath);
+            }
+        });
+    } catch (error) {
+        console.error('Error running code:', error);
+    }
+}
+function activate(context) {
+    // Create a status bar item to run the extension
+    let runButton = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
+    runButton.text = "$(triangle-right) Run UNITWISE";
+    runButton.command = 'extension.swanaitesting';
+    runButton.tooltip = 'Run the extension';
+    runButton.show();
+
+    // Create a terminal to install dependencies
+    const terminal = vscode.window.createTerminal("Install Generative AI Dependency");
+
+    // Register the "Run Extension" command
+    let disposable = vscode.commands.registerCommand('extension.swanaitesting', async () => {
+        // Show the loading indicator
+        let loadingIndicator = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
+        loadingIndicator.text = "$(sync~spin) Working...";
+        loadingIndicator.show();
+
+        // Install dependencies if not already installed
+        exec("npm list --depth 0 @google/generative-ai", (error, stdout, stderr) => {
+            if (stdout.includes('@google/generative-ai')) {
+                vscode.window.showInformationMessage('Dependency already installed.');
+                continueExtensionExecution();
+            } else {
+                // Install dependencies
+                terminal.sendText("npm install @google/generative-ai");
+                terminal.show();
+
+                exec("npm install @google/generative-ai", (error, stdout, stderr) => {
+                    if (error || stderr) {
+                        vscode.window.showErrorMessage(`Failed to install dependency: ${error || stderr}`);
+                        loadingIndicator.hide();
+                        return;
+                    }
+                    vscode.window.showInformationMessage('Dependency installed successfully.');
+                    continueExtensionExecution();
+                });
+            }
+        });
+        vscode.window.showInformationMessage('UNITWISE EXTENSION started successfully.');
+
+        function continueExtensionExecution() {
+            // Select directory and file
+            vscode.window.showOpenDialog({
+                canSelectFiles: false,
+                canSelectFolders: true,
+                openLabel: 'Select Directory'
+            }).then(uri => {
+                if (!uri || uri.length === 0) {
+                    vscode.window.showErrorMessage('No directory selected.');
+                    return;
+                }
+                const directoryPath = uri[0].fsPath;
+                vscode.window.showOpenDialog({
+                    canSelectFiles: true,
+                    canSelectFolders: false,
+                    openLabel: 'Select File'
+                }).then(uri => {
+                    if (!uri || uri.length === 0) {
+                        vscode.window.showErrorMessage('No file selected.');
+                        return;
+                    }
+                    const filePath = uri[0].fsPath;
+                    fs.readFile(filePath, 'utf-8', async (err, data) => {
+                        if (err) {
+                            vscode.window.showErrorMessage(`Error reading file: ${err.message}`);
+                            return;
+                        }
+                        const newFileName = path.basename(filePath);
+                        const extension = newFileName.split('.').pop().toLowerCase();
+                        let language = '';
+                        if (extension === 'py') {
+                            language = 'python';
+                        } else if (extension === 'js') {
+                            language = 'javascript';
+                        } else if (extension === 'ts') {
+                            language = 'typescript';
+                        } else if (extension === 'go') {
+                            language = 'golang';
+                        } else {
+                            vscode.window.showErrorMessage('Unsupported file extension.');
+                            return;
+                        }
+                        const newFilePath = path.join(directoryPath, `uwtest.${extension}`);
+                        fs.writeFile(newFilePath, data, async (err) => {
+                            if (err) {
+                                vscode.window.showErrorMessage(`Error writing file: ${err.message}`);
+                                return;
+                            }
+                            vscode.window.showInformationMessage(`File ${newFilePath} created successfully.`);
+                            await generateEdgeCasesAndCode(data, directoryPath, language);
+                            loadingIndicator.hide();
+                        });
+                    });
+                });
+            });
+        }
+    });
+
+    // Add the disposable to the context subscriptions
+    context.subscriptions.push(disposable);
+    let disposableCodeLens = vscode.languages.registerCodeLensProvider('*', {
+        provideCodeLenses(document, token) {
+            const codeLenses = [];
+            const regexMap = {
+                'python': /(?:class|def)\s+\w+/g,
+                'javascript': /(?:function|class)\s+\w+/g,
+                'typescript': /(?:function|class)\s+\w+/g,
+                'go': /(?:func|type|struct)\s+\w+/g
+            };
+            
+            const languageId = document.languageId;
+            const regex = regexMap[languageId];
+            if (!regex) {
+                return [];
+            }
+            let match;
+            while ((match = regex.exec(document.getText()))) {
+                const startPos = document.positionAt(match.index);
+                const endPos = document.positionAt(match.index + match[0].length);
+                const range = new vscode.Range(startPos, endPos);
+                const command = {
+                    title: "Run UNITWISE",
+                    command: "extension.swanaitesting",
+                    arguments: []
+                };
+                const codeLens = new vscode.CodeLens(range, command);
+                codeLenses.push(codeLens);
+            }
+            return codeLenses;
+        }
+    });
+    context.subscriptions.push(disposableCodeLens);
+}
+
+
+//----------------------------------------------------------------
+//                    WEBVIEW / FRONTEND
+//----------------------------------------------------------------
+function showResultsInWebView(edgeCases, generatedCode, logs, reasons_go, fixed_formatCode_go, more_edgecases_to_pass_go, more_edgecases_to_pass_code_go, fixed_test_code, filePath) {
+    const panel = vscode.window.createWebviewPanel(
+        'edgeCasesWebView',
+        'Edge Cases & Generated Code',
+        vscode.ViewColumn.Two,
+        {
+            enableScripts: true
+        }
+    );
+
+    let htmlContent = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Edge Cases & Generated Code</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                margin: 20px;
+            }
+            h2 {
+                color: #333;
+            }
+            pre {
+                background-color: #f5f5f5;
+                padding: 10px;
+                border-radius: 5px;
+                overflow-x: auto;
+            }
+        </style>
+    </head>
+    <body>
+        <h2>Edge Cases:</h2>
+        <pre id="edgeCases">${edgeCases}</pre>
+
+        <h2>Generated Code:</h2>
+        <pre id="generatedCode">${generatedCode}</pre>
+
+        <button id="showMoreEdgeCases">Show More Test Cases</button>
+        <button id="showLogs">Show Logs</button>
+        <button id="showReasons" style="display: none;">Show Failure Reasons</button>
+        <button id="fixTestCodeButton" style="display: none;">Fix Test Case Code</button>
+        <button id="fixOriginalCodeButton" style="display: none;">Fix Original Code</button>
+
+        <pre id="logs" style="display: none;">${logs}</pre>
+        <pre id="reasons" style="display: none;">${reasons_go}</pre>
+        <pre id="fixedTestCode" style="display: none;">${fixed_test_code}</pre>
+        <pre id="fixedCode" style="display: none;">${fixed_formatCode_go}</pre>
+        <pre id="moreEdgeCases" style="display: none;">${more_edgecases_to_pass_go}</pre>
+        <pre id="moreEdgeCasesCode" style="display: none;">${more_edgecases_to_pass_code_go}</pre>
+    </body>
+    <script>
+        const vscode = acquireVsCodeApi();
+
+        const showMoreEdgeCasesButton = document.getElementById('showMoreEdgeCases');
+        const showLogsButton = document.getElementById('showLogs');
+        const showReasonsButton = document.getElementById('showReasons');
+        const fixTestCodeButton = document.getElementById('fixTestCodeButton');
+        const fixOriginalCodeButton = document.getElementById('fixOriginalCodeButton');
+        
+        const logsPre = document.getElementById('logs');
+        const reasonsPre = document.getElementById('reasons');
+        const fixedTestCodePre = document.getElementById('fixedTestCode');
+        const fixedCodePre = document.getElementById('fixedCode');
+        const moreEdgeCasesPre = document.getElementById('moreEdgeCases');
+        const moreEdgeCasesCodePre = document.getElementById('moreEdgeCasesCode');
+
+        showMoreEdgeCasesButton.addEventListener('click', () => {
+            vscode.postMessage({
+                command: 'rerunExtension'
+            });
+        });
+
+        showLogsButton.addEventListener('click', () => {
+            logsPre.style.display = 'block';
+            showLogsButton.style.display = 'none';
+            showReasonsButton.style.display = 'inline-block';
+        });
+
+        showReasonsButton.addEventListener('click', () => {
+            reasonsPre.style.display = 'block';
+            showReasonsButton.style.display = 'none';
+            fixTestCodeButton.style.display = 'inline-block';
+            fixOriginalCodeButton.style.display = 'inline-block';
+        });
+
+        fixTestCodeButton.addEventListener('click', () => {
+            fixedTestCodePre.style.display = 'block';
+            fixTestCodeButton.style.display = 'none';
+            // Send message to extension to save fixed test code
+            vscode.postMessage({
+                command: 'saveFixedTestCode',
+                content: fixedTestCodePre.innerText
+            });
+        });
+
+        fixOriginalCodeButton.addEventListener('click', () => {
+            fixedCodePre.style.display = 'block';
+            fixOriginalCodeButton.style.display = 'none';
+        });
+    </script>
+    </html>
+    `;
+
+    panel.webview.html = htmlContent;
+
+    panel.webview.onDidReceiveMessage(message => {
+        switch (message.command) {
+            case 'saveFixedTestCode':
+                saveFixedTestCode(message.content, filePath);
+                break;
+            case 'rerunExtension':
+                vscode.commands.executeCommand('extension.swanaitesting');
+                break;
+            default:
+                console.error('Unhandled message:', message);
+        }
+    });
+
+    function saveFixedTestCode(content, filePath) {
+        fs.writeFile(filePath, content, err => {
+            if (err) {
+                vscode.window.showErrorMessage(`Error saving fixed test code: ${err.message}`);
+                return;
+            }
+            vscode.window.showInformationMessage(`Fixed test code saved to: ${filePath}`);
+        });
+    }
+}
+
+module.exports = {
+    activate,
+};
