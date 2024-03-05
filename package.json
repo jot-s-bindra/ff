@@ -33,9 +33,14 @@
   "repository": null,
   "permissions": [
     "python",
+    "javascript",
+    "typescript",
+    "go",
     "workspace"
-  ],
+]
+,
   "dependencies": {
+    "dotenv": "^16.4.5",
     "openai": "^4.28.4"
   }
 }
