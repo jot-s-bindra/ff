@@ -13,7 +13,7 @@ require('dotenv').config();
 //                  GLOBAL VARIABLES
 //----------------------------------------------------------------
 // const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }); 
-const openai = new OpenAI({ apiKey: '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' }); 
+const openai = new OpenAI({ apiKey: '' }); 
 const test_cases = 3;
 let language = "";
 let edgecases_used = "";
